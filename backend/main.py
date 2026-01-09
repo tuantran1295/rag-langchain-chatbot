@@ -27,9 +27,21 @@ except Exception as e:
 app = FastAPI(title="RAG Chatbot API", version="1.0.0")
 
 # CORS middleware with environment-based origins
+# Support both the main frontend URL and Vercel preview URLs
+frontend_url = settings.frontend_url
+allowed_origins = [frontend_url]
+
+# Use regex to allow Vercel preview deployments (they have dynamic subdomains)
+# Vercel URLs look like: https://project-name-xyz123.vercel.app or https://project-name-git-branch-user.vercel.app
+allow_origin_regex = None
+if "vercel.app" in frontend_url:
+    # Allow any subdomain of vercel.app for preview deployments
+    allow_origin_regex = r"https://.*\.vercel\.app"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url],
+    allow_origins=allowed_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
