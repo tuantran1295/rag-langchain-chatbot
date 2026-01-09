@@ -67,7 +67,7 @@ function App() {
 
     return (
         <div className="container">
-            <h1>RAG Chatbot (React + LangChain)</h1>
+            <h1>A very good RAG Chatbot</h1>
 
             {/* Upload Section */}
             <div className="upload-section">
