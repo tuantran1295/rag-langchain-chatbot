@@ -4,7 +4,10 @@ python-multipart
 langchain
 langchain-openai
 langchain-community
-chromadb
+langchain-postgres
+langchain-classic
 pypdf
 python-dotenv
-faiss-cpu
+psycopg2-binary
+sqlalchemy
+pydantic-settings

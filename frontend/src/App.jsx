@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import { API_URL } from './config';
 import './App.css';
 
 function App() {
@@ -25,14 +26,23 @@ function App() {
         formData.append('file', file);
 
         try {
-            await axios.post('http://localhost:8000/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+            const response = await axios.post(`${API_URL}/upload`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 60000 // 60 second timeout for large files
             });
-            alert('File uploaded and processed successfully!');
-            setMessages(prev => [...prev, { sender: 'bot', text: 'Document loaded. Ask me anything!' }]);
+            setMessages(prev => [...prev, { 
+                sender: 'bot', 
+                text: response.data.message || 'Document loaded. Ask me anything!' 
+            }]);
         } catch (error) {
             console.error('Error uploading file:', error);
-            alert('Failed to upload file.');
+            const errorMessage = error.response?.data?.detail || 
+                                error.message || 
+                                'Failed to upload file. Please try again.';
+            setMessages(prev => [...prev, { 
+                sender: 'bot', 
+                text: `Error: ${errorMessage}` 
+            }]);
         } finally {
             setUploading(false);
             setFile(null);
@@ -45,21 +55,28 @@ function App() {
 
         const userMessage = { sender: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
+        const queryText = input;
         setInput('');
         setLoading(true);
 
         try {
-            const response = await axios.post('http://localhost:8000/chat', {
-                query: userMessage.text
+            const response = await axios.post(`${API_URL}/chat`, {
+                query: queryText
+            }, {
+                timeout: 30000 // 30 second timeout
             });
-            console.log('Chatbot response:', response);
-            // debugger;
 
             const botMessage = { sender: 'bot', text: response.data.response };
             setMessages(prev => [...prev, botMessage]);
         } catch (error) {
             console.error('Error querying chatbot:', error);
-            setMessages(prev => [...prev, { sender: 'bot', text: 'Error getting response.' }]);
+            const errorMessage = error.response?.data?.detail || 
+                                error.message || 
+                                'Error getting response. Please try again.';
+            setMessages(prev => [...prev, { 
+                sender: 'bot', 
+                text: `Error: ${errorMessage}` 
+            }]);
         } finally {
             setLoading(false);
         }
