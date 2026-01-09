@@ -1,17 +1,28 @@
 import logging
 import io
+import os
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from config import settings
-from rag import process_document, query_rag
 
-# Configure structured logging
+# Configure basic logging first (before config import)
 logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper()),
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Try to import config, but don't fail if env vars are missing
+try:
+    from config import settings
+    config_loaded = True
+except Exception as e:
+    logger.warning(f"Config not fully loaded: {e}. Health endpoint will still work.")
+    config_loaded = False
+    # Create a minimal settings object for health checks
+    class MinimalSettings:
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    settings = MinimalSettings()
 
 app = FastAPI(title="RAG Chatbot API", version="1.0.0")
 
@@ -41,9 +52,13 @@ async def upload_file(file: UploadFile = File(...)):
     Upload and process a PDF document.
     Processes file in-memory to avoid filesystem dependencies.
     """
+    if not config_loaded:
+        raise HTTPException(status_code=503, detail="Service configuration not loaded. Check environment variables.")
+    
     logger.info(f"Received upload request for file: {file.filename}")
     
     try:
+        from rag import process_document
         # Read file content into memory
         contents = await file.read()
         file_obj = io.BytesIO(contents)
@@ -62,9 +77,13 @@ async def chat(request: QueryRequest):
     """
     Query the RAG system with a question.
     """
+    if not config_loaded:
+        raise HTTPException(status_code=503, detail="Service configuration not loaded. Check environment variables.")
+    
     logger.info(f"Received chat query: {request.query[:100]}...")
     
     try:
+        from rag import query_rag
         response = query_rag(request.query)
         logger.info("Successfully generated response")
         return {"response": response}
