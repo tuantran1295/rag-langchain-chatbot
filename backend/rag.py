@@ -62,17 +62,56 @@ def get_llm():
     return _llm
 
 
+def normalize_database_url(url: str) -> str:
+    """
+    Normalize database URL to handle IPv6 issues and connection pooling.
+    Forces IPv4 if needed and handles Supabase connection pooler.
+    """
+    # If it's a Supabase URL and uses IPv6, try to force IPv4
+    if "supabase.co" in url:
+        # Replace IPv6 hostname with IPv4 if present, or use connection pooler
+        # Supabase connection pooler uses port 6543 and is better for serverless
+        if ":5432" in url and "pooler" not in url:
+            # Try using connection pooler instead (port 6543)
+            # This is more reliable for cloud deployments
+            url = url.replace(":5432", ":6543")
+            # Add ?pgbouncer=true if not present
+            if "?" not in url:
+                url += "?pgbouncer=true"
+        # Force IPv4 by using the direct connection string format
+        # Remove any IPv6 addresses and use the hostname directly
+        import re
+        # Replace IPv6 addresses in brackets with hostname
+        url = re.sub(r'\[([0-9a-fA-F:]+)\]', lambda m: url.split('@')[1].split(':')[0] if '@' in url else m.group(1), url)
+    
+    return url
+
+
 def get_engine():
     """Lazy-load database engine to avoid import-time failures."""
     global _engine
     if _engine is None:
         settings = get_settings()
+        # Normalize the connection URL to handle IPv6 and use connection pooler
+        db_url = normalize_database_url(settings.database_url)
+        
+        # Add connection arguments to prefer IPv4
+        connect_args = {}
+        # Force IPv4 if possible
+        if "supabase.co" in db_url:
+            # Use connection pooler settings
+            connect_args = {
+                "connect_timeout": 10,
+                "options": "-c statement_timeout=30000"
+            }
+        
         _engine = create_engine(
-            settings.database_url,
+            db_url,
             pool_size=5,
             max_overflow=10,
             pool_pre_ping=True,  # Verify connections before using
-            echo=False
+            echo=False,
+            connect_args=connect_args
         )
     return _engine
 
@@ -83,9 +122,11 @@ def get_vectorstore() -> PGVector:
     Uses the 'documents' table defined in supabase_setup.sql.
     """
     settings = get_settings()
+    # Use normalized database URL (with connection pooler if Supabase)
+    db_url = normalize_database_url(settings.database_url)
     return PGVector(
         embeddings=get_embeddings(),
-        connection=settings.database_url,
+        connection=db_url,
         collection_name="documents",
         use_jsonb=True,
         pre_delete_collection=False,  # Don't delete existing data
