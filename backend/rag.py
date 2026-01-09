@@ -14,32 +14,67 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_classic.chains import create_retrieval_chain
 from sqlalchemy import create_engine, text
-from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize embeddings with configurable model
-embeddings = OpenAIEmbeddings(
-    model=settings.embedding_model,
-    openai_api_key=settings.openai_api_key
-)
+# Lazy-loaded globals (initialized on first use)
+_embeddings = None
+_llm = None
+_engine = None
+_settings = None
 
-# Initialize LLM
-llm = ChatOpenAI(
-    model=settings.llm_model,
-    temperature=0,
-    openai_api_key=settings.openai_api_key
-)
 
-# Create SQLAlchemy engine with connection pooling
-# Connection pool defaults: pool_size=5, max_overflow=10
-engine = create_engine(
-    settings.database_url,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,  # Verify connections before using
-    echo=False
-)
+def get_settings():
+    """Lazy-load settings to avoid import-time failures."""
+    global _settings
+    if _settings is None:
+        try:
+            from config import settings
+            _settings = settings
+        except Exception as e:
+            logger.error(f"Failed to load settings: {e}")
+            raise RuntimeError("Configuration not loaded. Please set required environment variables.")
+    return _settings
+
+
+def get_embeddings():
+    """Lazy-load embeddings to avoid import-time failures."""
+    global _embeddings
+    if _embeddings is None:
+        settings = get_settings()
+        _embeddings = OpenAIEmbeddings(
+            model=settings.embedding_model,
+            openai_api_key=settings.openai_api_key
+        )
+    return _embeddings
+
+
+def get_llm():
+    """Lazy-load LLM to avoid import-time failures."""
+    global _llm
+    if _llm is None:
+        settings = get_settings()
+        _llm = ChatOpenAI(
+            model=settings.llm_model,
+            temperature=0,
+            openai_api_key=settings.openai_api_key
+        )
+    return _llm
+
+
+def get_engine():
+    """Lazy-load database engine to avoid import-time failures."""
+    global _engine
+    if _engine is None:
+        settings = get_settings()
+        _engine = create_engine(
+            settings.database_url,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,  # Verify connections before using
+            echo=False
+        )
+    return _engine
 
 
 def get_vectorstore() -> PGVector:
@@ -47,8 +82,9 @@ def get_vectorstore() -> PGVector:
     Get or create the PGVector store with connection pooling.
     Uses the 'documents' table defined in supabase_setup.sql.
     """
+    settings = get_settings()
     return PGVector(
-        embeddings=embeddings,
+        embeddings=get_embeddings(),
         connection=settings.database_url,
         collection_name="documents",
         use_jsonb=True,
@@ -68,6 +104,7 @@ def check_document_exists(doc_hash: str) -> bool:
     Check if a document with the given hash already exists in the database.
     """
     try:
+        engine = get_engine()
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
@@ -187,6 +224,8 @@ def query_rag(query_text: str) -> str:
         """)
         
         # 4. Create the retrieval chain
+        llm = get_llm()
+        settings = get_settings()
         document_chain = create_stuff_documents_chain(llm, prompt)
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
         
