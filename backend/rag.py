@@ -201,6 +201,9 @@ def query_rag(query_text: str) -> str:
     logger.info(f"Processing query: {query_text[:100]}...")
     
     try:
+        # Load settings first
+        settings = get_settings()
+        
         # 1. Get vectorstore (connects to database)
         vectorstore = get_vectorstore()
         
@@ -225,7 +228,6 @@ def query_rag(query_text: str) -> str:
         
         # 4. Create the retrieval chain
         llm = get_llm()
-        settings = get_settings()
         document_chain = create_stuff_documents_chain(llm, prompt)
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
         
